@@ -8,19 +8,27 @@ from pathlib import Path
 # Initialize YOLO model
 def load_model():
     # Load YOLOv8 model
-    model = YOLO('yolov8n.pt')  # Using the nano model, will download if not present
+    # Options: yolov8n.pt (nano), yolov8s.pt (small), yolov8m.pt (medium), 
+    # yolov8l.pt (large), yolov8x.pt (xlarge)
+    model = YOLO('yolov8l.pt')  # Using large model for better accuracy
     return model
 
 # Process image and count people
-def process_image(model, image_path, output_path=None, conf_threshold=0.3):
+def process_image(model, image_path, output_path=None, conf_threshold=0.4):
     # Read the image
     img = cv2.imread(image_path)
     if img is None:
         print(f"Error: Could not read image {image_path}")
         return None, 0
     
-    # Run YOLOv8 inference on the image
-    results = model(img, conf=conf_threshold)
+    # Run YOLOv8 inference on the image with additional parameters
+    results = model(
+        img,
+        conf=conf_threshold,
+        iou=DETECTION_CONFIG['iou_threshold'],
+        agnostic_nms=DETECTION_CONFIG['agnostic_nms'],
+        max_det=DETECTION_CONFIG['max_det']
+    )
     
     # Initialize person counter
     person_count = 0
@@ -55,7 +63,7 @@ def process_image(model, image_path, output_path=None, conf_threshold=0.3):
     return img, person_count
 
 # Process video and count people
-def process_video(model, video_path, output_path=None, conf_threshold=0.3, display=True):
+def process_video(model, video_path, output_path=None, conf_threshold=0.4, display=True):
     # Open the video file
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -77,11 +85,23 @@ def process_video(model, video_path, output_path=None, conf_threshold=0.3, displ
     total_people = 0
     processing_times = []
     
+    # Initialize frame buffer for averaging
+    frame_buffer = []
+    buffer_size = 3
+    
     while True:
-        # Read a frame
         ret, frame = cap.read()
         if not ret:
             break
+            
+        # Add frame to buffer
+        frame_buffer.append(frame)
+        if len(frame_buffer) > buffer_size:
+            frame_buffer.pop(0)
+            
+        # Average frames if buffer is full
+        if len(frame_buffer) == buffer_size:
+            frame = np.mean(frame_buffer, axis=0).astype(np.uint8)
         
         start_time = time.time()
         
